@@ -58,5 +58,8 @@
     <FxCompile Include="Fractal.hlsl">
       <Filter>Shaders</Filter>
     </FxCompile>
+    <FxCompile Include="Standard.hlsl">
+      <Filter>Shaders</Filter>
+    </FxCompile>
   </ItemGroup>
 </Project>

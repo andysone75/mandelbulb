@@ -83,8 +83,16 @@ float2 SceneInfo(float3 position) {
 		phi = phi * gPower;
 
 		// convert back to cartesian coordinates
-		z = zr * float3(sin(theta) * cos(phi), sin(phi) * sin(theta), cos(theta));
-		z += position;
+		z = zr * float3(
+			sin(theta) * cos(phi), 
+			sin(phi) * sin(theta), 
+			cos(theta));
+
+		// z = zr * float3(
+		// 	cos(theta) * cos(phi),
+		// 	cos(theta) * sin(phi),
+		// 	sin(theta));
+		// z += position;
 	}
 
 	// Number of iterations, Calculated distance
@@ -93,7 +101,6 @@ float2 SceneInfo(float3 position) {
 
 float4 PS(VertexOut pin) : SV_Target
 {
-	// ray origin, ray direction
 	Ray ray = CreateRay(gCamPos, normalize(pin.WorldPos - gCamPos));
 	float rayDst = 0;
 	float marchSteps = 0;
