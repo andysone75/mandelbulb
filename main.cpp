@@ -2,30 +2,17 @@
 #include "MathHelper.h"
 #include "UploadBuffer.h"
 #include "KeyCode.h"
+#include "FrameResource.h"
 
 using Microsoft::WRL::ComPtr;
 using namespace DirectX;
 using namespace DirectX::PackedVector;
 
+const int gNumFrameResources = 3;
+
 struct Vertex
 {
 	XMFLOAT3 Pos;
-};
-
-struct ObjectConstants
-{
-	XMFLOAT4X4 World = MathHelper::Identity4x4();
-	XMFLOAT4X4 WorldView = MathHelper::Identity4x4();
-	XMFLOAT4X4 InvWorldView = MathHelper::Identity4x4();
-	XMFLOAT4X4 WorldViewProj = MathHelper::Identity4x4();
-
-	XMFLOAT3 CamPos;
-	FLOAT AspectRatio;
-
-	FLOAT Power;
-
-	XMFLOAT3 Color;
-	FLOAT Darkness;
 };
 
 struct Input
@@ -58,15 +45,20 @@ private:
 	virtual void OnMouseUp(WPARAM btnState, int x, int y) override;
 	virtual void OnMouseMove(WPARAM btnState, int x, int y) override;
 
-	void BuildConstantBuffers();
+	void UpdateMainPassCB(const GameTimer& gt);
+
 	void BuildRootSignature();
 	void BuildShadersAndInputLayout();
 	void BuildGeometry();
 	void BuildPSO();
+	void BuildFrameResources();
 
 private:
+	std::vector<std::unique_ptr<FrameResource>> mFrameResources;
+	FrameResource* mCurrFrameResource = nullptr;
+	int mCurrFrameResourceIndex = 0;
+
 	ComPtr<ID3D12RootSignature> mRootSignature = nullptr;
-	std::unique_ptr<UploadBuffer<ObjectConstants>> mObjectCB = nullptr;
 	std::unique_ptr<MeshGeometry> mGeometry = nullptr;
 
 	ComPtr<ID3DBlob> mvsByteCode = nullptr;
@@ -132,10 +124,10 @@ bool RayMarching::Initialize()
 
 	ThrowIfFailed(mCommandList->Reset(mCommandListAlloc.Get(), nullptr));
 
-	BuildConstantBuffers();
 	BuildRootSignature();
 	BuildShadersAndInputLayout();
 	BuildGeometry();
+	BuildFrameResources();
 	BuildPSO();
 
 	ThrowIfFailed(mCommandList->Close());
@@ -222,65 +214,32 @@ void RayMarching::OnResize()
 
 void RayMarching::Update(const GameTimer& gt)
 {
-	float x = sinf(mPhi) * cosf(mTheta);
-	float z = sinf(mPhi) * sinf(mTheta);
-	float y = cosf(mPhi);
-
-
-	XMVECTOR pos = mPosition;
-	XMVECTOR target = XMVectorSet(x, y, z, 0.0f) + mPosition;
-	XMVECTOR up = XMVectorSet(.0f, 1.0f, .0f, .0f);
-	
-	XMVECTOR lForward = XMVector3Normalize(target - mPosition);
-	XMVECTOR lRight = XMVector3Normalize(XMVector3Cross(lForward, up));
-
-	mPosition = mPosition + (
-		lForward	* mInput.Vertical	* mMoveSpeedHor
-		+ lRight	* mInput.Horizontal * mMoveSpeedHor
-		+ up		* (mInput.GetKey_E ? +1.0f : mInput.GetKey_Q ? -1.0f : 0.0f) * mMoveSpeedVert
-	) * (mInput.GetKey_LShift ? mMoveSpeedAcceleration : 1.0f) * mTimer.DeltaTime();
-
-	pos = mPosition;
-	target = XMVectorSet(x, y, z, 0.0f) + mPosition;
-
-
-	XMMATRIX world = XMLoadFloat4x4(&mWorld);
-	XMMATRIX view = XMMatrixLookAtLH(pos, target, up);
-	XMMATRIX proj = XMLoadFloat4x4(&mProj);
-
-	XMMATRIX worldView = world * view;
-	XMMATRIX worldViewProj = worldView * proj;
-
-	worldView = XMMatrixTranspose(worldView);
-	worldViewProj = XMMatrixTranspose(worldViewProj);
-
-
-	ObjectConstants objConstants;
-
-	XMStoreFloat4x4(&objConstants.World, XMMatrixTranspose(world));
-	XMStoreFloat4x4(&objConstants.WorldView, worldView);
-	XMStoreFloat4x4(&objConstants.InvWorldView, XMMatrixInverse(&XMMatrixDeterminant(worldView), worldView));
-	XMStoreFloat4x4(&objConstants.WorldViewProj, worldViewProj);
-
-	XMStoreFloat3(&objConstants.CamPos, mPosition);
-	objConstants.AspectRatio = AspectRatio();
-
-	objConstants.Power = mPower;
-
-	objConstants.Color = XMFLOAT3(1, 0, 1);
-	objConstants.Darkness = 150.0f;
-
-	mObjectCB->CopyData(0, objConstants);
-
-
 	mPower += mPowerGrowSpeed * mTimer.DeltaTime();
 	if (mPower < 1.0f) mPower = 1.0f;
+
+	// Cycle through the circular frame resource array.
+	mCurrFrameResourceIndex = (mCurrFrameResourceIndex + 1) % gNumFrameResources;
+	mCurrFrameResource = mFrameResources[mCurrFrameResourceIndex].get();
+
+	// Has the GPU finished processing the commands of the current frame resources?
+	// If not, wait until the GPU has completed commands up to this point.
+	if (mCurrFrameResource->Fence != 0 && mFence->GetCompletedValue() < mCurrFrameResource->Fence)
+	{
+		HANDLE eventHandle = CreateEventEx(nullptr, nullptr, CREATE_EVENT_MANUAL_RESET, EVENT_ALL_ACCESS);
+		ThrowIfFailed(mFence->SetEventOnCompletion(mCurrFrameResource->Fence, eventHandle));
+		WaitForSingleObject(eventHandle, INFINITE);
+		CloseHandle(eventHandle);
+	}
+
+	UpdateMainPassCB(gt);
 }
 
 void RayMarching::Draw(const GameTimer& gt)
 {
-	ThrowIfFailed(mCommandListAlloc->Reset());
-	ThrowIfFailed(mCommandList->Reset(mCommandListAlloc.Get(), mPSO.Get()));
+	auto cmdListAlloc = mCurrFrameResource->CmdListAlloc;
+
+	ThrowIfFailed(cmdListAlloc->Reset());
+	ThrowIfFailed(mCommandList->Reset(cmdListAlloc.Get(), mPSO.Get()));
 
 	mCommandList->RSSetViewports(1, &mScreenViewport);
 	mCommandList->RSSetScissorRects(1, &mScissorRect);
@@ -308,8 +267,8 @@ void RayMarching::Draw(const GameTimer& gt)
 
 	mCommandList->SetGraphicsRootSignature(mRootSignature.Get());
 
-	D3D12_GPU_VIRTUAL_ADDRESS objCBAddress = mObjectCB->Resource()->GetGPUVirtualAddress();
-	mCommandList->SetGraphicsRootConstantBufferView(0, objCBAddress);
+	D3D12_GPU_VIRTUAL_ADDRESS passCBAddress = mCurrFrameResource->PassCB->Resource()->GetGPUVirtualAddress();
+	mCommandList->SetGraphicsRootConstantBufferView(0, passCBAddress);
 
 	mCommandList->IASetVertexBuffers(0, 1, &mGeometry->VertexBufferView());
 	mCommandList->IASetIndexBuffer(&mGeometry->IndexBufferView());
@@ -334,7 +293,10 @@ void RayMarching::Draw(const GameTimer& gt)
 	ThrowIfFailed(mSwapChain->Present(0, 0));
 	mCurrBackBuffer = (mCurrBackBuffer + 1) % SwapChainBufferCount;
 
-	FlushCommandQueue();
+	// Advance the fence value to mark commands up to this fence point.
+	mCurrFrameResource->Fence = ++mCurrentFence;
+
+	mCommandQueue->Signal(mFence.Get(), mCurrentFence);
 }
 
 void RayMarching::OnMouseDown(WPARAM btnState, int x, int y)
@@ -371,9 +333,55 @@ void RayMarching::OnMouseMove(WPARAM btnState, int x, int y)
 	mLastMousePos.y = y;
 }
 
-void RayMarching::BuildConstantBuffers()
+void RayMarching::UpdateMainPassCB(const GameTimer& gt)
 {
-	mObjectCB = std::make_unique<UploadBuffer<ObjectConstants>>(md3dDevice.Get(), 1, true);
+	float x = sinf(mPhi) * cosf(mTheta);
+	float z = sinf(mPhi) * sinf(mTheta);
+	float y = cosf(mPhi);
+
+	XMVECTOR pos = mPosition;
+	XMVECTOR target = XMVectorSet(x, y, z, 0.0f) + mPosition;
+	XMVECTOR up = XMVectorSet(.0f, 1.0f, .0f, .0f);
+
+	XMVECTOR lForward = XMVector3Normalize(target - mPosition);
+	XMVECTOR lRight = XMVector3Normalize(XMVector3Cross(lForward, up));
+
+	mPosition = mPosition + (
+		lForward * mInput.Vertical * mMoveSpeedHor
+		+ lRight * mInput.Horizontal * mMoveSpeedHor
+		+ up * (mInput.GetKey_E ? +1.0f : mInput.GetKey_Q ? -1.0f : 0.0f) * mMoveSpeedVert
+		) * (mInput.GetKey_LShift ? mMoveSpeedAcceleration : 1.0f) * mTimer.DeltaTime();
+
+	pos = mPosition;
+	target = XMVectorSet(x, y, z, 0.0f) + mPosition;
+
+
+	XMMATRIX world = XMLoadFloat4x4(&mWorld);
+	XMMATRIX view = XMMatrixLookAtLH(pos, target, up);
+	XMMATRIX proj = XMLoadFloat4x4(&mProj);
+
+	XMMATRIX worldView = world * view;
+	XMMATRIX worldViewProj = worldView * proj;
+
+	worldView = XMMatrixTranspose(worldView);
+	worldViewProj = XMMatrixTranspose(worldViewProj);
+
+	PassConstants passConstants;
+	
+	XMStoreFloat4x4(&passConstants.World, XMMatrixTranspose(world));
+	XMStoreFloat4x4(&passConstants.WorldView, worldView);
+	XMStoreFloat4x4(&passConstants.InvWorldView, XMMatrixInverse(&XMMatrixDeterminant(worldView), worldView));
+	XMStoreFloat4x4(&passConstants.WorldViewProj, worldViewProj);
+
+	XMStoreFloat3(&passConstants.CamPos, mPosition);
+	passConstants.AspectRatio = AspectRatio();
+	
+	passConstants.FractalPower = mPower;
+
+	passConstants.Color = XMFLOAT3(0.0f, 0.0f, 1.0f);
+	passConstants.Darkness = 150.0f;
+
+	mCurrFrameResource->PassCB->CopyData(0, passConstants);
 }
 
 void RayMarching::BuildRootSignature()
@@ -508,4 +516,10 @@ void RayMarching::BuildPSO()
 	psoDesc.SampleDesc.Quality = m4xMsaaState ? (m4xMsaaQuality - 1) : 0;
 	psoDesc.DSVFormat = mDepthStencilFormat;
 	ThrowIfFailed(md3dDevice->CreateGraphicsPipelineState(&psoDesc, IID_PPV_ARGS(&mPSO)));
+}
+
+void RayMarching::BuildFrameResources() {
+	for (int i = 0; i < gNumFrameResources; ++i) {
+		mFrameResources.push_back(std::make_unique<FrameResource>(md3dDevice.Get(), 1));
+	}
 }
