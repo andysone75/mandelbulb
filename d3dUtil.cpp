@@ -44,19 +44,23 @@ ComPtr<ID3D12Resource> d3dUtil::CreateDefaultBuffer(
 	ComPtr<ID3D12Resource>& uploadBuffer)
 {
 	ComPtr<ID3D12Resource> defaultBuffer;
+	CD3DX12_HEAP_PROPERTIES heapProperties0(D3D12_HEAP_TYPE_DEFAULT);
+	CD3DX12_RESOURCE_DESC resourceDesc0 = CD3DX12_RESOURCE_DESC::Buffer(byteSize);
 	ThrowIfFailed(device->CreateCommittedResource(
-		&CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_DEFAULT),
+		&heapProperties0,
 		D3D12_HEAP_FLAG_NONE,
-		&CD3DX12_RESOURCE_DESC::Buffer(byteSize),
+		&resourceDesc0,
 		D3D12_RESOURCE_STATE_COMMON,
 		nullptr,
 		IID_PPV_ARGS(defaultBuffer.GetAddressOf())
 	));
 
+	CD3DX12_HEAP_PROPERTIES heapProperties1(D3D12_HEAP_TYPE_UPLOAD);
+	CD3DX12_RESOURCE_DESC resourceDesc1 = CD3DX12_RESOURCE_DESC::Buffer(byteSize);
 	ThrowIfFailed(device->CreateCommittedResource(
-		&CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_UPLOAD),
+		&heapProperties1,
 		D3D12_HEAP_FLAG_NONE,
-		&CD3DX12_RESOURCE_DESC::Buffer(byteSize),
+		&resourceDesc1,
 		D3D12_RESOURCE_STATE_GENERIC_READ,
 		nullptr,
 		IID_PPV_ARGS(uploadBuffer.GetAddressOf())
@@ -67,11 +71,12 @@ ComPtr<ID3D12Resource> d3dUtil::CreateDefaultBuffer(
 	subResourceData.RowPitch = byteSize;
 	subResourceData.SlicePitch = byteSize;
 
-	cmdList->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::Transition(
+	CD3DX12_RESOURCE_BARRIER resourceBarrier0 = CD3DX12_RESOURCE_BARRIER::Transition(
 		defaultBuffer.Get(),
 		D3D12_RESOURCE_STATE_COMMON,
 		D3D12_RESOURCE_STATE_COPY_DEST
-	));
+	);
+	cmdList->ResourceBarrier(1, &resourceBarrier0);
 
 	UpdateSubresources<1>(
 		cmdList,
@@ -81,11 +86,12 @@ ComPtr<ID3D12Resource> d3dUtil::CreateDefaultBuffer(
 		&subResourceData
 	);
 
-	cmdList->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::Transition(
+	CD3DX12_RESOURCE_BARRIER resourceBarrier1 = CD3DX12_RESOURCE_BARRIER::Transition(
 		defaultBuffer.Get(),
 		D3D12_RESOURCE_STATE_COPY_DEST,
 		D3D12_RESOURCE_STATE_GENERIC_READ
-	));
+	);
+	cmdList->ResourceBarrier(1, &resourceBarrier1);
 
 	return defaultBuffer;
 }

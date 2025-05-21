@@ -244,11 +244,12 @@ void RayMarching::Draw(const GameTimer& gt)
 	mCommandList->RSSetViewports(1, &mScreenViewport);
 	mCommandList->RSSetScissorRects(1, &mScissorRect);
 
-	mCommandList->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::Transition(
+	CD3DX12_RESOURCE_BARRIER resourceBarrier0 = CD3DX12_RESOURCE_BARRIER::Transition(
 		CurrentBackBuffer(),
 		D3D12_RESOURCE_STATE_PRESENT,
 		D3D12_RESOURCE_STATE_RENDER_TARGET
-	));
+	);
+	mCommandList->ResourceBarrier(1, &resourceBarrier0);
 
 	mCommandList->ClearRenderTargetView(
 		CurrentBackBufferView(),
@@ -263,15 +264,19 @@ void RayMarching::Draw(const GameTimer& gt)
 		0, nullptr
 	);
 
-	mCommandList->OMSetRenderTargets(1, &CurrentBackBufferView(), true, &DepthStencilView());
+	D3D12_CPU_DESCRIPTOR_HANDLE bufferViewHandle = CurrentBackBufferView();
+	D3D12_CPU_DESCRIPTOR_HANDLE depthHandle = DepthStencilView();
+	mCommandList->OMSetRenderTargets(1, &bufferViewHandle, true, &depthHandle);
 
 	mCommandList->SetGraphicsRootSignature(mRootSignature.Get());
 
 	D3D12_GPU_VIRTUAL_ADDRESS passCBAddress = mCurrFrameResource->PassCB->Resource()->GetGPUVirtualAddress();
 	mCommandList->SetGraphicsRootConstantBufferView(0, passCBAddress);
 
-	mCommandList->IASetVertexBuffers(0, 1, &mGeometry->VertexBufferView());
-	mCommandList->IASetIndexBuffer(&mGeometry->IndexBufferView());
+	D3D12_VERTEX_BUFFER_VIEW vertexBuffer = mGeometry->VertexBufferView();
+	D3D12_INDEX_BUFFER_VIEW indexBuffer = mGeometry->IndexBufferView();
+	mCommandList->IASetVertexBuffers(0, 1, &vertexBuffer);
+	mCommandList->IASetIndexBuffer(&indexBuffer);
 	mCommandList->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 
 	mCommandList->DrawIndexedInstanced(
@@ -279,11 +284,12 @@ void RayMarching::Draw(const GameTimer& gt)
 		1, 0, 0, 0
 	);
 
-	mCommandList->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::Transition(
+	CD3DX12_RESOURCE_BARRIER resourceBarrier1 = CD3DX12_RESOURCE_BARRIER::Transition(
 		CurrentBackBuffer(),
 		D3D12_RESOURCE_STATE_RENDER_TARGET,
 		D3D12_RESOURCE_STATE_PRESENT
-	));
+	);
+	mCommandList->ResourceBarrier(1, &resourceBarrier1);
 
 	ThrowIfFailed(mCommandList->Close());
 
@@ -368,9 +374,10 @@ void RayMarching::UpdateMainPassCB(const GameTimer& gt)
 
 	PassConstants passConstants;
 	
+	XMVECTOR worldViewDeterminant = XMMatrixDeterminant(worldView);
 	XMStoreFloat4x4(&passConstants.World, XMMatrixTranspose(world));
 	XMStoreFloat4x4(&passConstants.WorldView, worldView);
-	XMStoreFloat4x4(&passConstants.InvWorldView, XMMatrixInverse(&XMMatrixDeterminant(worldView), worldView));
+	XMStoreFloat4x4(&passConstants.InvWorldView, XMMatrixInverse(&worldViewDeterminant, worldView));
 	XMStoreFloat4x4(&passConstants.WorldViewProj, worldViewProj);
 
 	XMStoreFloat3(&passConstants.CamPos, mPosition);
