@@ -390,12 +390,32 @@ bool D3DApp::InitDirect3D()
 
 	ThrowIfFailed(CreateDXGIFactory1(IID_PPV_ARGS(&mdxgiFactory)));
 
-	IDXGIAdapter* adapter;
-	mdxgiFactory->EnumAdapters(0, &adapter);
+	IDXGIAdapter1* adapter;
+	UINT selectedAdapterId;
+	DXGI_ADAPTER_DESC1 desc;
+	SIZE_T maxVideoMemory = 0;
 
-	DXGI_ADAPTER_DESC desc;
-	adapter->GetDesc(&desc);
+	for (UINT i = 0;
+		mdxgiFactory->EnumAdapters1(i, &adapter) != DXGI_ERROR_NOT_FOUND;
+		++i)	
+	{
+		adapter->GetDesc1(&desc);
 
+		if (desc.Flags & DXGI_ADAPTER_FLAG_SOFTWARE) {
+			adapter->Release();
+			continue;
+		}
+
+		if (desc.DedicatedVideoMemory >= maxVideoMemory) {
+			selectedAdapterId = i;
+			maxVideoMemory = desc.DedicatedVideoMemory;
+		}
+
+		adapter->Release();
+	}
+
+	mdxgiFactory->EnumAdapters1(selectedAdapterId, &adapter);
+	adapter->GetDesc1(&desc);
 	mMainWndCaption = desc.Description;
 
 	HRESULT hardwareResult = D3D12CreateDevice(
