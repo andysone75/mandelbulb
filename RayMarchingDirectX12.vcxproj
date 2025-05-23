@@ -72,15 +72,19 @@
   <PropertyGroup Label="UserMacros" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
     <LinkIncremental>true</LinkIncremental>
+    <IncludePath>$(SolutionDir)src\include;$(IncludePath)</IncludePath>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <LinkIncremental>true</LinkIncremental>
+    <IncludePath>$(SolutionDir)src\include;$(IncludePath)</IncludePath>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
     <LinkIncremental>false</LinkIncremental>
+    <IncludePath>$(SolutionDir)src\include;$(IncludePath)</IncludePath>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <LinkIncremental>false</LinkIncremental>
+    <IncludePath>$(SolutionDir)src\include;$(IncludePath)</IncludePath>
   </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
     <ClCompile>
@@ -139,14 +143,6 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClCompile Include="d3dApp.cpp" />
-    <ClCompile Include="d3dUtil.cpp" />
-    <ClCompile Include="FrameResource.cpp" />
-    <ClCompile Include="GameTimer.cpp" />
-    <ClCompile Include="main.cpp" />
-    <ClCompile Include="MathHelper.cpp" />
-  </ItemGroup>
-  <ItemGroup>
     <ClInclude Include="d3dApp.h" />
     <ClInclude Include="d3dUtil.h" />
     <ClInclude Include="d3dx12.h" />
@@ -154,6 +150,15 @@
     <ClInclude Include="GameTimer.h" />
     <ClInclude Include="KeyCode.h" />
     <ClInclude Include="MathHelper.h" />
+    <ClInclude Include="src\include\d3dApp.h" />
+    <ClInclude Include="src\include\d3dAppEx.h" />
+    <ClInclude Include="src\include\d3dUtil.h" />
+    <ClInclude Include="src\include\d3dx12.h" />
+    <ClInclude Include="src\include\FrameResource.h" />
+    <ClInclude Include="src\include\GameTimer.h" />
+    <ClInclude Include="src\include\KeyCode.h" />
+    <ClInclude Include="src\include\MathHelper.h" />
+    <ClInclude Include="src\include\UploadBuffer.h" />
   </ItemGroup>
   <ItemGroup>
     <FxCompile Include="Fractal.hlsl">
@@ -166,6 +171,14 @@
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
     </FxCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="main.cpp" />
+    <ClCompile Include="src\cpp\d3dApp.cpp" />
+    <ClCompile Include="src\cpp\d3dUtil.cpp" />
+    <ClCompile Include="src\cpp\FrameResource.cpp" />
+    <ClCompile Include="src\cpp\GameTimer.cpp" />
+    <ClCompile Include="src\cpp\MathHelper.cpp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
